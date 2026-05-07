@@ -26,6 +26,28 @@ class MemeController extends Controller
     }
 
     // ────────────────────────────────────────────────────────────────
+    // GET /api/session  — Infos de la session en cours
+    // Synchronise le compteur avec la vraie valeur en base
+    // ────────────────────────────────────────────────────────────────
+    public function sessionInfo()
+    {
+        $sessionId = session()->getId();
+
+        // Recalcule depuis la base pour être toujours exact
+        $count = Meme::where('session_id', $sessionId)->count();
+
+        // Met à jour la session avec la vraie valeur
+        session([self::SESSION_KEY => $count]);
+
+        return response()->json([
+            'session_id' => $sessionId,
+            'used'       => $count,
+            'limit'      => self::SESSION_LIMIT,
+            'remaining'  => max(0, self::SESSION_LIMIT - $count),
+        ]);
+    }
+
+    // ────────────────────────────────────────────────────────────────
     // GET /api/memes
     // ────────────────────────────────────────────────────────────────
     public function index(Request $request)
@@ -49,8 +71,11 @@ class MemeController extends Controller
     // ────────────────────────────────────────────────────────────────
     public function store(Request $request)
     {
-        // ── 1. Limite de session ──────────────────────────────────────
-        $count = session(self::SESSION_KEY, 0);
+        // ── 1. Recalcule le vrai compteur depuis la base ──────────────
+        $sessionId = session()->getId();
+        $count     = Meme::where('session_id', $sessionId)->count();
+        session([self::SESSION_KEY => $count]);
+
         if ($count >= self::SESSION_LIMIT) {
             return response()->json([
                 'error' => 'Session limit reached: you cannot save more than '
@@ -123,20 +148,22 @@ class MemeController extends Controller
             'top_text'    => $topText,
             'bottom_text' => $bottomText,
             'tags'        => $request->input('tags'),
-            'session_id'  => session()->getId(),
+            'session_id'  => $sessionId,
         ]);
 
         // ── 7. Mise à jour session ────────────────────────────────────
         $hashes[] = $imageHash;
+        $newCount  = $count + 1;
         session([
-            self::SESSION_KEY    => $count + 1,
+            self::SESSION_KEY    => $newCount,
             self::SESSION_HASHES => $hashes,
         ]);
 
         return response()->json([
             'message'   => 'Meme saved successfully!',
             'meme_url'  => $imageUrl,
-            'remaining' => self::SESSION_LIMIT - ($count + 1),
+            'used'      => $newCount,
+            'remaining' => self::SESSION_LIMIT - $newCount,
         ], 201);
     }
 
@@ -159,20 +186,7 @@ class MemeController extends Controller
             // Continue même si Cloudinary échoue
         }
 
-        $sessionId = $meme->session_id;
         $meme->delete();
-
-        if ($sessionId) {
-            $sessionPath = storage_path('framework/sessions/' . $sessionId);
-            if (file_exists($sessionPath)) {
-                $data = unserialize(file_get_contents($sessionPath));
-                if (isset($data[self::SESSION_KEY]) && $data[self::SESSION_KEY] > 0) {
-                    $data[self::SESSION_KEY]--;
-                }
-                $data[self::SESSION_HASHES] = [];
-                file_put_contents($sessionPath, serialize($data));
-            }
-        }
 
         return response()->json(['message' => 'Meme deleted successfully.']);
     }
