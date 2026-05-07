@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Api;
+namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\Meme;
@@ -14,8 +14,19 @@ class MemeController extends Controller
     private const SESSION_KEY    = 'memes_created';
     private const SESSION_HASHES = 'memes_hashes';
 
+    private function cloudinary(): Cloudinary
+    {
+        $config = new Configuration();
+        $config->cloud->cloudName = env('CLOUDINARY_CLOUD_NAME');
+        $config->cloud->apiKey    = env('CLOUDINARY_API_KEY');
+        $config->cloud->apiSecret = env('CLOUDINARY_API_SECRET');
+        $config->url->secure      = true;
+
+        return new Cloudinary($config);
+    }
+
     // ────────────────────────────────────────────────────────────────
-    // GET /api/memes  — Liste paginée (galerie React)
+    // GET /api/memes
     // ────────────────────────────────────────────────────────────────
     public function index(Request $request)
     {
@@ -34,7 +45,7 @@ class MemeController extends Controller
     }
 
     // ────────────────────────────────────────────────────────────────
-    // POST /api/generate  — Création d'un mème
+    // POST /api/generate
     // ────────────────────────────────────────────────────────────────
     public function store(Request $request)
     {
@@ -85,21 +96,18 @@ class MemeController extends Controller
 
         // ── 5. Upload vers Cloudinary ─────────────────────────────────
         try {
-            $cloudinary = new Cloudinary(Configuration::instance());
-
-            // On écrit le fichier dans un temp pour éviter les limites mémoire
             $tmpPath = tempnam(sys_get_temp_dir(), 'meme_');
             file_put_contents($tmpPath, $rawData);
 
-            $result   = $cloudinary->uploadApi()->upload($tmpPath, [
-                'folder'         => 'memes',
-                'resource_type'  => 'image',
+            $result = $this->cloudinary()->uploadApi()->upload($tmpPath, [
+                'folder'        => 'memes',
+                'resource_type' => 'image',
             ]);
 
             @unlink($tmpPath);
 
-            $imageUrl  = $result['secure_url'];
-            $publicId  = $result['public_id'];
+            $imageUrl = $result['secure_url'];
+            $publicId = $result['public_id'];
 
         } catch (\Exception $e) {
             return response()->json([
@@ -118,7 +126,7 @@ class MemeController extends Controller
             'session_id'  => session()->getId(),
         ]);
 
-        // ── 7. Mise à jour de la session ──────────────────────────────
+        // ── 7. Mise à jour session ────────────────────────────────────
         $hashes[] = $imageHash;
         session([
             self::SESSION_KEY    => $count + 1,
@@ -133,31 +141,24 @@ class MemeController extends Controller
     }
 
     // ────────────────────────────────────────────────────────────────
-    // DELETE /api/deleteMeme  — Suppression (dev / Postman)
+    // DELETE /api/deleteMeme
     // ────────────────────────────────────────────────────────────────
     public function destroy(Request $request)
     {
-        $request->validate([
-            'public_id' => 'required|string',
-        ]);
+        $request->validate(['public_id' => 'required|string']);
 
         $meme = Meme::where('public_id', $request->input('public_id'))->first();
 
         if (!$meme) {
-            return response()->json([
-                'error' => 'No meme found with this public_id.',
-            ], 404);
+            return response()->json(['error' => 'Meme not found.'], 404);
         }
 
-        // ── Suppression sur Cloudinary ────────────────────────────────
         try {
-            $cloudinary = new Cloudinary(Configuration::instance());
-            $cloudinary->uploadApi()->destroy($meme->public_id);
+            $this->cloudinary()->uploadApi()->destroy($meme->public_id);
         } catch (\Exception $e) {
-            // On continue même si Cloudinary échoue
+            // Continue même si Cloudinary échoue
         }
 
-        // ── Patch session ─────────────────────────────────────────────
         $sessionId = $meme->session_id;
         $meme->delete();
 
