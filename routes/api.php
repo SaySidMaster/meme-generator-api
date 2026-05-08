@@ -7,3 +7,6 @@ Route::get('/session',     [MemeController::class, 'sessionInfo']);
 Route::get('/memes',       [MemeController::class, 'index']);
 Route::post('/generate',   [MemeController::class, 'store']);
 Route::delete('/deleteMeme', [MemeController::class, 'destroy']);
+Route::get('/test', function () {
+    return response()->json(['message' => 'API en ligne']);
+});
