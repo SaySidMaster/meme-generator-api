@@ -7,6 +7,7 @@ use App\Models\Meme;
 use Illuminate\Http\Request;
 use Cloudinary\Cloudinary;
 use Cloudinary\Configuration\Configuration;
+use Illuminate\Support\Str;
 
 class MemeController extends Controller
 {
@@ -28,11 +29,18 @@ class MemeController extends Controller
     /**
      * Retourne le session ID à utiliser :
      * - Si le client envoie X-Session-Id, on l'utilise (cas prod cross-origin)
-     * - Sinon on utilise la session PHP standard (cas même domaine)
+     * - Sinon on génère un nouvel UUID et on l'envoie au client via le header
      */
     private function resolveSessionId(Request $request): string
     {
-        return $request->header('X-Session-Id') ?? session()->getId();
+        $sessionId = $request->header('X-Session-Id');
+        
+        if (!$sessionId) {
+            // Générer un nouvel UUID si pas de session existante
+            $sessionId = Str::uuid()->toString();
+        }
+        
+        return $sessionId;
     }
 
     // GET /api/session
