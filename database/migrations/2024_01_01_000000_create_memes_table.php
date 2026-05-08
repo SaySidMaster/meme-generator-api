@@ -11,8 +11,8 @@ return new class extends Migration
         Schema::create('memes', function (Blueprint $table) {
             $table->id();
             $table->string('name', 20);
-            $table->string('image_url');          // URL Cloudinary complète
-            $table->string('public_id');          // ID Cloudinary (pour suppression)
+            $table->string('image_url');
+            $table->string('public_id'); // ID Cloudinary (pour suppression)
             $table->string('top_text', 20)->nullable();
             $table->string('bottom_text', 20)->nullable();
             $table->string('tags', 20)->nullable();

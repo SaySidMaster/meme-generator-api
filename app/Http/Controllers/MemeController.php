@@ -10,46 +10,41 @@ use Cloudinary\Configuration\Configuration;
 
 class MemeController extends Controller
 {
-    private const SESSION_LIMIT  = 5;
-    private const SESSION_KEY    = 'memes_created';
+    private const SESSION_LIMIT = 5;
+    private const SESSION_KEY = 'memes_created';
     private const SESSION_HASHES = 'memes_hashes';
 
+    //Configure Cloudinary
     private function cloudinary(): Cloudinary
     {
         $config = new Configuration();
         $config->cloud->cloudName = env('CLOUDINARY_CLOUD_NAME');
-        $config->cloud->apiKey    = env('CLOUDINARY_API_KEY');
+        $config->cloud->apiKey = env('CLOUDINARY_API_KEY');
         $config->cloud->apiSecret = env('CLOUDINARY_API_SECRET');
-        $config->url->secure      = true;
+        $config->url->secure = true;
 
         return new Cloudinary($config);
     }
 
-    // ────────────────────────────────────────────────────────────────
-    // GET /api/session  — Infos de la session en cours
-    // Synchronise le compteur avec la vraie valeur en base
-    // ────────────────────────────────────────────────────────────────
+    // Synchonisation du compteur de la session avec la base de données
     public function sessionInfo()
     {
         $sessionId = session()->getId();
 
-        // Recalcule depuis la base pour être toujours exact
+        // Recalcule depuis la base pour eviter les incohérences avec la suppression de memes
         $count = Meme::where('session_id', $sessionId)->count();
 
-        // Met à jour la session avec la vraie valeur
         session([self::SESSION_KEY => $count]);
 
         return response()->json([
             'session_id' => $sessionId,
-            'used'       => $count,
-            'limit'      => self::SESSION_LIMIT,
-            'remaining'  => max(0, self::SESSION_LIMIT - $count),
+            'used' => $count,
+            'limit' => self::SESSION_LIMIT,
+            'remaining' => max(0, self::SESSION_LIMIT - $count),
         ]);
     }
 
-    // ────────────────────────────────────────────────────────────────
-    // GET /api/memes
-    // ────────────────────────────────────────────────────────────────
+    // Retourne la liste des memes, avec pagination et recherche
     public function index(Request $request)
     {
         $query = Meme::query()->latest();
@@ -57,7 +52,7 @@ class MemeController extends Controller
         if ($search = $request->input('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('tags', 'like', "%{$search}%");
+                    ->orWhere('tags', 'like', "%{$search}%");
             });
         }
 
@@ -66,33 +61,30 @@ class MemeController extends Controller
         );
     }
 
-    // ────────────────────────────────────────────────────────────────
-    // POST /api/generate
-    // ────────────────────────────────────────────────────────────────
+    // Génération d'un meme (upload + enregistrement)
     public function store(Request $request)
     {
-        // ── 1. Recalcule le vrai compteur depuis la base ──────────────
+        // Vérification de la limite de génération
         $sessionId = session()->getId();
-        $count     = Meme::where('session_id', $sessionId)->count();
+        $count = Meme::where('session_id', $sessionId)->count();
         session([self::SESSION_KEY => $count]);
 
         if ($count >= self::SESSION_LIMIT) {
             return response()->json([
                 'error' => 'Session limit reached: you cannot save more than '
-                         . self::SESSION_LIMIT . ' memes per session.',
+                    . self::SESSION_LIMIT . ' memes per session.',
             ], 429);
         }
 
-        // ── 2. Validation ─────────────────────────────────────────────
         $request->validate([
-            'name'        => 'required|string|max:20',
-            'image_data'  => 'required|string',
-            'top_text'    => 'nullable|string|max:20',
+            'name' => 'required|string|max:20',
+            'image_data' => 'required|string',
+            'top_text' => 'nullable|string|max:20',
             'bottom_text' => 'nullable|string|max:20',
-            'tags'        => 'nullable|string|max:20',
+            'tags' => 'nullable|string|max:20',
         ]);
 
-        $topText    = trim($request->input('top_text', ''));
+        $topText = trim($request->input('top_text', ''));
         $bottomText = trim($request->input('bottom_text', ''));
 
         if ($topText === '' && $bottomText === '') {
@@ -101,7 +93,7 @@ class MemeController extends Controller
             ], 422);
         }
 
-        // ── 3. Décodage de l'image ────────────────────────────────────
+        // Vérification du format de l'image (data URI)
         $imageData = $request->input('image_data');
         if (!preg_match('/^data:image\/(png|jpeg|jpg|webp);base64,/', $imageData, $matches)) {
             return response()->json(['error' => 'Invalid image data.'], 422);
@@ -109,9 +101,10 @@ class MemeController extends Controller
 
         $rawData = base64_decode(substr($imageData, strpos($imageData, ',') + 1));
 
-        // ── 4. Détection de doublon ───────────────────────────────────
+        // S'assurer de ne pas avoir de doublons dans la session (même image)
+        // Utile pour éviter les enregistrements multiples en cas de rafraîchissement ou de double clic
         $imageHash = md5($rawData);
-        $hashes    = session(self::SESSION_HASHES, []);
+        $hashes = session(self::SESSION_HASHES, []);
 
         if (in_array($imageHash, $hashes)) {
             return response()->json([
@@ -119,13 +112,13 @@ class MemeController extends Controller
             ], 409);
         }
 
-        // ── 5. Upload vers Cloudinary ─────────────────────────────────
+        // Upload vers Cloudinary
         try {
             $tmpPath = tempnam(sys_get_temp_dir(), 'meme_');
             file_put_contents($tmpPath, $rawData);
 
             $result = $this->cloudinary()->uploadApi()->upload($tmpPath, [
-                'folder'        => 'memes',
+                'folder' => 'memes',
                 'resource_type' => 'image',
             ]);
 
@@ -136,40 +129,38 @@ class MemeController extends Controller
 
         } catch (\Exception $e) {
             return response()->json([
-                'error' => 'Image upload failed: ' . $e->getMessage(),
+                'error' => 'Image upload failed ',// . $e->getMessage(),
             ], 500);
         }
 
-        // ── 6. Enregistrement en base ─────────────────────────────────
+        // Enregistrement en base de données
         Meme::create([
-            'name'        => $request->input('name'),
-            'image_url'   => $imageUrl,
-            'public_id'   => $publicId,
-            'top_text'    => $topText,
+            'name' => $request->input('name'),
+            'image_url' => $imageUrl,
+            'public_id' => $publicId,
+            'top_text' => $topText,
             'bottom_text' => $bottomText,
-            'tags'        => $request->input('tags'),
-            'session_id'  => $sessionId,
+            'tags' => $request->input('tags'),
+            'session_id' => $sessionId,
         ]);
 
-        // ── 7. Mise à jour session ────────────────────────────────────
+        // Mise à jour session (compteur + hash de l'image)
         $hashes[] = $imageHash;
-        $newCount  = $count + 1;
+        $newCount = $count + 1;
         session([
-            self::SESSION_KEY    => $newCount,
+            self::SESSION_KEY => $newCount,
             self::SESSION_HASHES => $hashes,
         ]);
 
         return response()->json([
-            'message'   => 'Meme saved successfully!',
-            'meme_url'  => $imageUrl,
-            'used'      => $newCount,
+            'message' => 'Meme saved successfully!',
+            'meme_url' => $imageUrl,
+            'used' => $newCount,
             'remaining' => self::SESSION_LIMIT - $newCount,
         ], 201);
     }
 
-    // ────────────────────────────────────────────────────────────────
-    // DELETE /api/deleteMeme
-    // ────────────────────────────────────────────────────────────────
+    // Suppression d'un meme
     public function destroy(Request $request)
     {
         $request->validate(['public_id' => 'required|string']);
