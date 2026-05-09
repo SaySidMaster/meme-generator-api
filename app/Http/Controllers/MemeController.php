@@ -12,8 +12,6 @@ use Illuminate\Support\Str;
 class MemeController extends Controller
 {
     private const SESSION_LIMIT = 5;
-    private const SESSION_KEY = 'memes_created';
-    private const SESSION_HASHES = 'memes_hashes';
 
     private function cloudinary(): Cloudinary
     {
@@ -25,26 +23,17 @@ class MemeController extends Controller
 
         return new Cloudinary($config);
     }
-
-    /**
-     * Retourne le session ID à utiliser :
-     * - Si le client envoie X-Session-Id, on l'utilise (cas prod cross-origin)
-     * - Sinon on génère un nouvel UUID et on l'envoie au client via le header
-     */
     private function resolveSessionId(Request $request): string
     {
         $sessionId = $request->header('X-Session-Id');
-        //affiche dans la console l'id de session utilisé
         
        if (!$sessionId) {
-            // Générer un nouvel UUID si pas de session existante
             $sessionId = Str::uuid()->toString();
         }
         
         return $sessionId;
     }
 
-    // GET /api/session
     public function sessionInfo(Request $request)
     {
         $sessionId = $this->resolveSessionId($request);
@@ -58,11 +47,11 @@ class MemeController extends Controller
         ]);
     }
 
-    // GET /api/memes
     public function index(Request $request)
     {
         $query = Meme::query()->latest();
 
+        // Recherche par nom ou tags
         if ($search = $request->input('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
@@ -75,12 +64,12 @@ class MemeController extends Controller
         );
     }
 
-    // POST /api/generate
     public function store(Request $request)
     {
         $sessionId = $this->resolveSessionId($request);
         $count = Meme::where('session_id', $sessionId)->count();
 
+        // Limite de 5 memes par session
         if ($count >= self::SESSION_LIMIT) {
             return response()->json([
                 'error' => 'Session limit reached: you cannot save more than '
@@ -99,6 +88,7 @@ class MemeController extends Controller
         $topText = trim($request->input('top_text', ''));
         $bottomText = trim($request->input('bottom_text', ''));
 
+        // Au moins un texte requis
         if ($topText === '' && $bottomText === '') {
             return response()->json([
                 'error' => 'At least one of Top Text or Bottom Text must be filled in.',
@@ -106,14 +96,13 @@ class MemeController extends Controller
         }
 
         $imageData = $request->input('image_data');
+        // Validation du format image base64
         if (!preg_match('/^data:image\/(png|jpeg|jpg|webp);base64,/', $imageData, $matches)) {
             return response()->json(['error' => 'Invalid image data.'], 422);
         }
 
         $rawData = base64_decode(substr($imageData, strpos($imageData, ',') + 1));
-        $imageHash = md5($rawData);
 
-        // Upload Cloudinary
         try {
             $tmpPath = tempnam(sys_get_temp_dir(), 'meme_');
             file_put_contents($tmpPath, $rawData);

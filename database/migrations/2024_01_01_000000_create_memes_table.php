@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->string('name', 20);
             $table->string('image_url');
-            $table->string('public_id'); // ID Cloudinary (pour suppression)
+            $table->string('public_id'); // ID Cloudinary pour suppression
             $table->string('top_text', 20)->nullable();
             $table->string('bottom_text', 20)->nullable();
             $table->string('tags', 20)->nullable();

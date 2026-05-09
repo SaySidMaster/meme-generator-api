@@ -1,7 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-
+// Page de partage d'un meme (pour les réseaux sociaux)
 Route::get('/share/{id}', function ($id) {
     $meme = \App\Models\Meme::findOrFail($id);
 
