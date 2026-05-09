@@ -34,8 +34,9 @@ class MemeController extends Controller
     private function resolveSessionId(Request $request): string
     {
         $sessionId = $request->header('X-Session-Id');
+        //affiche dans la console l'id de session utilisé
         
-        if (!$sessionId) {
+       if (!$sessionId) {
             // Générer un nouvel UUID si pas de session existante
             $sessionId = Str::uuid()->toString();
         }
@@ -112,17 +113,6 @@ class MemeController extends Controller
         $rawData = base64_decode(substr($imageData, strpos($imageData, ',') + 1));
         $imageHash = md5($rawData);
 
-        // Vérification doublon via la base (fiable en cross-origin)
-        $alreadyExists = Meme::where('session_id', $sessionId)
-            ->where('image_hash', $imageHash)
-            ->exists();
-
-        if ($alreadyExists) {
-            return response()->json([
-                'error' => 'This meme has already been saved in this session.',
-            ], 409);
-        }
-
         // Upload Cloudinary
         try {
             $tmpPath = tempnam(sys_get_temp_dir(), 'meme_');
@@ -146,7 +136,6 @@ class MemeController extends Controller
             'name' => $request->input('name'),
             'image_url' => $imageUrl,
             'public_id' => $publicId,
-            'image_hash' => $imageHash,
             'top_text' => $topText,
             'bottom_text' => $bottomText,
             'tags' => $request->input('tags'),
