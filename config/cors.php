@@ -1,9 +1,11 @@
 <?php
 
 return [
-    'paths' => ['api/*'],
+    'paths' => ['api/*', 'share/*'],
     'allowed_methods' => ['*'],
-    'allowed_origins' => ['http://localhost:5173', 'https://meme-generator-p1op.vercel.app'],
+    'allowed_origins' => array_filter([
+        env('FRONTEND_URL'),
+    ]),
     'allowed_origins_patterns' => [],
     'allowed_headers' => ['*'],
     'exposed_headers' => [],
